@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#16161c;color:#eee;margin:0;padding:18px}
+  h3{margin:18px 0 8px} input,textarea{width:100%;box-sizing:border-box;background:#22222b;color:#eee;border:1px solid #444;border-radius:8px;padding:8px;font:inherit;margin-bottom:8px}
+  textarea{height:300px;font-family:Consolas,monospace} button{background:#1db954;color:#000;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;margin-right:8px}
+  button.g{background:#333;color:#eee} small{opacity:.6;display:block;margin-bottom:8px} #ok{color:#1db954}
+</style>
+<h3>Lyrics for current song</h3>
+<input id="artist" placeholder="Artist"><input id="title" placeholder="Title">
+<textarea id="text" placeholder="Paste lyrics here. Plain text, or LRC with timestamps like [01:23.45] line..."></textarea>
+<small>Timestamped (LRC) lyrics scroll in sync. Plain lyrics are shown as scrollable text. Saving empty text removes your custom lyrics.</small>
+<button id="save">Save lyrics</button><span id="ok"></span>
+<h3>Spotify</h3>
+<input id="cid" placeholder="Spotify Client ID">
+<small>Redirect URI to register in your Spotify app: http://127.0.0.1:8888/callback</small>
+<button id="cs" class="g">Save Client ID</button><button id="cn">Connect Spotify</button>
+<script>
+const $ = id => document.getElementById(id);
+api.invoke('editor:init').then(s => {
+  if (s.track) { $('artist').value = s.track.artist; $('title').value = s.track.title; }
+  $('text').value = s.text; $('cid').value = s.clientId;
+});
+$('save').onclick = async () => {
+  await api.invoke('editor:save', { artist: $('artist').value, title: $('title').value, text: $('text').value });
+  $('ok').textContent = 'Saved ✓'; setTimeout(() => $('ok').textContent = '', 2000);
+};
+$('cs').onclick = () => api.invoke('editor:clientId', $('cid').value);
+$('cn').onclick = async () => { await api.invoke('editor:clientId', $('cid').value); api.invoke('editor:connect'); };
+</script>
