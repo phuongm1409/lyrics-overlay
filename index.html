@@ -60,7 +60,7 @@ api.on('track', t => {
   $('meta').textContent = `${t.artist} – ${t.title}  (${t.source}, ${kind})`;
   if (lines.length) { showMsg(''); build(); focusLine(-1); }
   else if (t.plain) { showMsg(''); $('plain').textContent = t.plain; $('plain').style.display = 'block'; }
-  else showMsg('No lyrics found – press Ctrl+Alt+E to add them');
+  else showMsg('No lyrics found – press Ctrl+Alt+I to add them');
 });
 api.on('status', s => { reset(); $('meta').textContent = ''; showMsg(s); });
 api.on('progress', p => { base = p.ms; at = performance.now(); playing = p.playing; });

@@ -105,24 +105,52 @@ function parse(text) {
   out.sort((a, b) => a.t - b.t);
   return out.length ? { lines: out, plain: '' } : { lines: [], plain: text.trim() };
 }
+const clean = x => x.replace(/\s*[\(\[][^)\]]*(feat|ft\.|with|remaster|version|ver\.|edit|live|inst)[^)\]]*[\)\]]/gi, '')
+  .replace(/\s+-\s+.*(remaster|version|edit|live|mono|stereo|single).*$/i, '').trim();
+const dist = (x, t) => Math.abs((x.duration || 0) - t.duration / 1000);
+const HL = { headers: { 'User-Agent': 'LyricsOverlay/1.0' } };
+const jget = async (url, opt) => { try { const r = await fetch(url, opt); return r.ok ? await r.json() : null; } catch { return null; } };
+const isSynced = x => /\[\d+:\d+/.test(x || '');
+
+async function fromLrclib(t) {
+  let plain = '';
+  for (const name of [...new Set([t.title, clean(t.title)])]) {
+    const j = await jget('https://lrclib.net/api/get?' + new URLSearchParams({ artist_name: t.artist, track_name: name, album_name: t.album, duration: Math.round(t.duration / 1000) }), HL);
+    if (j && j.syncedLyrics) return j.syncedLyrics;
+    if (j && j.plainLyrics && !plain) plain = j.plainLyrics;
+  }
+  for (const [q, tol] of [[`${t.artist} ${clean(t.title)}`, 5], [clean(t.title), 3]]) {
+    const a = (await jget('https://lrclib.net/api/search?' + new URLSearchParams({ q }), HL)) || [];
+    const ok = a.filter(x => dist(x, t) <= tol).sort((x, y) => dist(x, t) - dist(y, t));
+    const s = ok.find(x => x.syncedLyrics);
+    if (s) return s.syncedLyrics;
+    if (!plain) plain = (ok.find(x => x.plainLyrics) || {}).plainLyrics || '';
+  }
+  return plain;
+}
+// Unofficial public endpoint; may stop working at any time.
+async function fromNetease(t) {
+  const H2 = { headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://music.163.com' } };
+  const s = await jget('https://music.163.com/api/search/get/web?' + new URLSearchParams({ s: `${t.artist} ${clean(t.title)}`, type: 1, offset: 0, limit: 10 }), H2);
+  const songs = (s && s.result && s.result.songs) || [];
+  const best = songs.map(x => ({ id: x.id, d: x.duration ? Math.abs(x.duration - t.duration) : 2000 })).sort((a, b) => a.d - b.d)[0];
+  if (!best || best.d > 4000) return '';
+  const l = await jget(`https://music.163.com/api/song/lyric?id=${best.id}&lv=1&kv=1&tv=-1`, H2);
+  return (l && l.lrc && l.lrc.lyric) || '';
+}
+
 async function loadLyrics(t) {
   let raw = '', source = 'none';
   const custom = rd('lyrics.json', {})[key(t.artist, t.title)];
   if (custom) { raw = custom; source = 'custom'; }
   else {
-    try {
-      const h = { headers: { 'User-Agent': 'LyricsOverlay/1.0' } };
-      const q = new URLSearchParams({ artist_name: t.artist, track_name: t.title, album_name: t.album, duration: Math.round(t.duration / 1000) });
-      let r = await fetch('https://lrclib.net/api/get?' + q, h);
-      let j = r.ok ? await r.json() : null;
-      if (!j || !j.syncedLyrics) {
-        const r2 = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ artist_name: t.artist, track_name: t.title }), h);
-        const a = r2.ok ? await r2.json() : [];
-        const d = x => Math.abs(x.duration - t.duration / 1000);
-        j = a.filter(x => x.syncedLyrics).sort((x, y) => d(x) - d(y))[0] || j || a[0];
-      }
-      if (j) { raw = j.syncedLyrics || j.plainLyrics || ''; source = raw ? 'lrclib' : 'none'; }
-    } catch {}
+    let plainRaw = '', plainSrc = '';
+    for (const [name, fn] of [['lrclib', fromLrclib], ['netease', fromNetease]]) {
+      let r = ''; try { r = await fn(t); } catch {}
+      if (isSynced(r)) { raw = r; source = name; break; }
+      if (r && r.length > 30 && !plainRaw) { plainRaw = r; plainSrc = name; }
+    }
+    if (!raw && plainRaw) { raw = plainRaw; source = plainSrc; }
   }
   lastRaw = raw;
   return { ...parse(raw), source };
@@ -183,7 +211,7 @@ app.whenReady().then(() => {
   const gs = (k, f) => globalShortcut.register(k, f);
   gs('CommandOrControl+Alt+L', () => setLocked(!locked));
   gs('CommandOrControl+Alt+H', () => win.isVisible() ? win.hide() : win.show());
-  gs('CommandOrControl+Alt+E', openEditor);
+  gs('CommandOrControl+Alt+I', openEditor);
   gs('CommandOrControl+Alt+S', openSettings);
   gs('CommandOrControl+Alt+Left', () => send('offset', -250));
   gs('CommandOrControl+Alt+Right', () => send('offset', 250));
