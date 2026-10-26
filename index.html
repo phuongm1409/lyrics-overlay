@@ -2,52 +2,64 @@
 <meta charset="utf-8">
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
-  #box{height:100%;box-sizing:border-box;padding:14px 24px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;background:rgba(10,10,14,.55);border-radius:18px}
+  #box{position:relative;height:100%;box-sizing:border-box;background:rgba(10,10,14,.28);border-radius:18px}
   body.unlocked #box{-webkit-app-region:drag;outline:2px dashed rgba(255,255,255,.45)}
-  .l{margin:3px 0;text-shadow:0 2px 8px #000;line-height:1.25}
-  #prev,#next{font-size:18px;opacity:.5}
-  #cur{font-size:30px;font-weight:700}
-  #meta{position:absolute;top:6px;left:16px;font-size:11px;opacity:.55}
-  #plain{white-space:pre-wrap;overflow:auto;max-height:100%;font-size:18px;-webkit-app-region:no-drag;display:none}
+  #meta{position:absolute;top:8px;left:18px;right:18px;font-size:12px;font-weight:600;opacity:.75;text-shadow:0 1px 4px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2}
+  #view{position:absolute;inset:26px 20px 8px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent)}
+  #list{transition:transform .5s cubic-bezier(.22,.8,.25,1);will-change:transform}
+  .ln{text-align:center;font-size:34px;font-weight:900;line-height:1.2;padding:8px 10px;opacity:.4;transform:scale(.8);
+      transition:opacity .35s,transform .35s;text-shadow:0 0 6px #000,0 2px 10px #000,0 0 18px rgba(0,0,0,.8)}
+  .ln.near{opacity:.65}
+  .ln.cur{opacity:1;transform:scale(1)}
+  #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;font-size:24px;font-weight:800;text-shadow:0 0 6px #000,0 2px 10px #000}
+  #plain{position:absolute;inset:26px 20px 8px;white-space:pre-wrap;overflow:auto;text-align:center;font-size:24px;font-weight:800;line-height:1.4;text-shadow:0 0 6px #000,0 2px 10px #000;display:none;-webkit-app-region:no-drag}
 </style>
 <div id="box">
   <div id="meta"></div>
-  <div class="l" id="prev"></div><div class="l" id="cur"></div><div class="l" id="next"></div>
+  <div id="view"><div id="list"></div></div>
   <div id="plain"></div>
+  <div id="msg"></div>
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let lines = [], base = 0, at = 0, playing = false, off = 0, last = -2;
+let lines = [], els = [], base = 0, at = 0, playing = false, off = 0, last = -2;
 
-function showText(msg, plain) {            // non-synced states
-  $('prev').textContent = $('next').textContent = '';
-  $('cur').textContent = plain ? '' : msg;
-  $('plain').style.display = plain ? 'block' : 'none';
-  $('plain').textContent = plain || '';
+function showMsg(text) { $('msg').textContent = text; $('msg').style.display = text ? 'flex' : 'none'; }
+function reset() { lines = []; els = []; last = -2; $('list').innerHTML = ''; $('plain').style.display = 'none'; $('plain').textContent = ''; }
+
+function build() {
+  const list = $('list'); list.innerHTML = '';
+  els = lines.map(l => { const d = document.createElement('div'); d.className = 'ln'; d.textContent = l.text || '♪'; list.appendChild(d); return d; });
 }
-function showLines(p, c, n) {
-  $('plain').style.display = 'none';
-  $('prev').textContent = p ? p.text : '';
-  $('cur').textContent = c ? (c.text || '♪') : '♪';
-  $('next').textContent = n ? n.text : '';
+function focusLine(i) {
+  const c = Math.max(i, 0);
+  els.forEach((e, k) => { const d = Math.abs(k - i); e.className = 'ln' + (k === i ? ' cur' : d === 1 ? ' near' : ''); });
+  const e = els[c]; if (!e) return;
+  $('list').style.transform = `translateY(${$('view').clientHeight / 2 - (e.offsetTop + e.offsetHeight / 2)}px)`;
 }
+
 api.on('track', t => {
-  lines = t.lines; last = -2;
-  $('meta').textContent = `${t.artist} – ${t.title}  (${t.source})`;
-  if (!lines.length) showText('No lyrics found – press Ctrl+Alt+E to add them', t.plain);
+  reset(); lines = t.lines; off = 0;
+  const kind = lines.length ? 'synced' : t.plain ? 'unsynced' : 'none';
+  $('meta').textContent = `${t.artist} – ${t.title}  (${t.source}, ${kind})`;
+  if (lines.length) { showMsg(''); build(); focusLine(-1); }
+  else if (t.plain) { showMsg(''); $('plain').textContent = t.plain; $('plain').style.display = 'block'; }
+  else showMsg('No lyrics found – press Ctrl+Alt+E to add them');
 });
-api.on('status', s => { lines = []; $('meta').textContent = ''; showText(s); });
+api.on('status', s => { reset(); $('meta').textContent = ''; showMsg(s); });
 api.on('progress', p => { base = p.ms; at = performance.now(); playing = p.playing; });
 api.on('locked', v => document.body.classList.toggle('unlocked', !v));
 api.on('offset', d => { off += d; $('meta').textContent = `sync offset ${off} ms`; });
-showText('Waiting for Spotify…');
+window.addEventListener('resize', () => { if (lines.length) focusLine(last); });
+showMsg('Waiting for Spotify…');
 
 (function frame() {
   if (lines.length) {
     const pos = base + (playing ? performance.now() - at : 0) + off;
     let i = -1;
     while (i + 1 < lines.length && lines[i + 1].t <= pos) i++;
-    if (i !== last) { last = i; showLines(lines[i - 1], lines[i], lines[i + 1]); }
+    if (i !== last) { last = i; focusLine(i); }
   }
   requestAnimationFrame(frame);
 })();
