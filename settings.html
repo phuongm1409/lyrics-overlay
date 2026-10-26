@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#16161c;color:#eee;margin:0;padding:16px 20px}
+  h4{margin:18px 0 6px;color:#1db954;font-size:13px;text-transform:uppercase;letter-spacing:.08em}
+  .r{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:14px} .r label{width:150px;flex:none}
+  .r input[type=range]{flex:1} .r select{flex:1;background:#22222b;color:#eee;border:1px solid #444;border-radius:6px;padding:5px}
+  .r input[type=color]{width:60px;height:28px;border:0;background:none;padding:0} .v{width:48px;text-align:right;opacity:.7;font-size:12px}
+  button{background:#1db954;color:#000;border:0;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;margin:16px 8px 0 0} button.g{background:#333;color:#eee}
+  small{display:block;opacity:.6;margin-top:10px}
+</style>
+<div id="f"></div>
+<button id="pv">Preview sample lyrics (50s)</button><button id="rs" class="g">Reset to defaults</button>
+<small>Changes apply to the overlay instantly and are saved automatically.</small>
+<script>
+const FONTS = ['Segoe UI','Arial','Verdana','Trebuchet MS','Georgia','Times New Roman','Consolas','Impact','Comic Sans MS'].map(x => [x, x]);
+const F = [
+  ['Text'],
+  ['fontSize', 'Font size', 'range', 16, 64, 1, 'px'],
+  ['fontWeight', 'Boldness', 'select', [[400, 'Regular'], [600, 'Semi-bold'], [700, 'Bold'], [800, 'Extra bold'], [900, 'Black']]],
+  ['fontFamily', 'Font', 'select', FONTS],
+  ['fontStyle', 'Style', 'select', [['normal', 'Normal'], ['italic', 'Italic']]],
+  ['align', 'Alignment', 'select', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']]],
+  ['Colors'],
+  ['activeColor', 'Current line', 'color'],
+  ['textColor', 'Other lines', 'color'],
+  ['dimOpacity', 'Other lines visibility', 'range', 10, 100, 1, '%'],
+  ['Shadow'],
+  ['shadowColor', 'Shadow color', 'color'],
+  ['shadowBlur', 'Shadow size', 'range', 0, 30, 1, 'px'],
+  ['shadowOpacity', 'Shadow strength', 'range', 0, 100, 1, '%'],
+  ['Background'],
+  ['bgColor', 'Color', 'color'],
+  ['bgOpacity', 'Opacity', 'range', 0, 100, 1, '%'],
+  ['radius', 'Corner roundness', 'range', 0, 40, 1, 'px']
+];
+function render(vals) {
+  const root = document.getElementById('f'); root.innerHTML = '';
+  for (const [k, label, type, a, b, step, unit] of F) {
+    if (!label) { const h = document.createElement('h4'); h.textContent = k; root.appendChild(h); continue; }
+    const row = document.createElement('div'); row.className = 'r';
+    const l = document.createElement('label'); l.textContent = label; row.appendChild(l);
+    let inp;
+    if (type === 'select') {
+      inp = document.createElement('select');
+      for (const [v, t] of a) { const o = document.createElement('option'); o.value = v; o.textContent = t; inp.appendChild(o); }
+    } else { inp = document.createElement('input'); inp.type = type; if (type === 'range') { inp.min = a; inp.max = b; inp.step = step; } }
+    inp.value = vals[k]; row.appendChild(inp);
+    let out; if (type === 'range') { out = document.createElement('span'); out.className = 'v'; out.textContent = vals[k] + unit; row.appendChild(out); }
+    inp.addEventListener('input', () => {
+      if (out) out.textContent = inp.value + unit;
+      api.invoke('settings:set', { [k]: type === 'range' ? Number(inp.value) : inp.value });
+    });
+    root.appendChild(row);
+  }
+}
+api.invoke('settings:get').then(render);
+document.getElementById('rs').onclick = () => api.invoke('settings:reset').then(render);
+document.getElementById('pv').onclick = () => api.invoke('settings:preview');
+</script>

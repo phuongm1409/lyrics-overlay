@@ -8,13 +8,17 @@ const wr = (f, v) => fs.writeFileSync(path.join(U(), f), JSON.stringify(v, null,
 const key = (a, t) => `${a} - ${t}`.toLowerCase().trim();
 
 let win, editor, tray, locked = true, track = null, lastId = null, lastRaw = '', backoff = 0, busy = false;
-let cfg = {}, tokens = {};
+let cfg = {}, tokens = {}, settingsWin, previewUntil = 0;
+const DEFAULTS = { fontSize: 34, fontWeight: 900, fontFamily: 'Segoe UI', fontStyle: 'normal', align: 'center',
+  activeColor: '#ffffff', textColor: '#ffffff', dimOpacity: 40, shadowColor: '#000000', shadowBlur: 10, shadowOpacity: 100,
+  bgColor: '#0a0a0e', bgOpacity: 28, radius: 18 };
+let settings = { ...DEFAULTS };
 
 // ---------- overlay window ----------
 function createOverlay() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
-    width: 800, height: 200, x: Math.round((width - 800) / 2), y: height - 240,
+    width: 800, height: 300, x: Math.round((width - 800) / 2), y: height - 340,
     transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   });
@@ -36,12 +40,20 @@ function openEditor() {
   editor.setMenu(null);
   editor.loadFile('editor.html');
 }
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) return settingsWin.focus();
+  settingsWin = new BrowserWindow({ width: 440, height: 720, x: 20, y: 20, title: 'Lyrics Overlay – Appearance',
+    webPreferences: { preload: path.join(__dirname, 'preload.js') } });
+  settingsWin.setMenu(null);
+  settingsWin.loadFile('settings.html');
+}
 function buildTray() {
   if (!tray) tray = new Tray(path.join(__dirname, 'icon.png'));
   tray.setToolTip('Lyrics Overlay');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: locked ? 'Unlock (move/resize)' : 'Lock (click-through)', click: () => setLocked(!locked) },
     { label: 'Add / edit lyrics…', click: openEditor },
+    { label: 'Appearance…', click: openSettings },
     { label: 'Connect Spotify', click: connect },
     { label: 'Show / hide', click: () => win.isVisible() ? win.hide() : win.show() },
     { type: 'separator' }, { label: 'Quit', click: () => app.quit() }
@@ -103,10 +115,11 @@ async function loadLyrics(t) {
       const q = new URLSearchParams({ artist_name: t.artist, track_name: t.title, album_name: t.album, duration: Math.round(t.duration / 1000) });
       let r = await fetch('https://lrclib.net/api/get?' + q, h);
       let j = r.ok ? await r.json() : null;
-      if (!j) {
-        r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ artist_name: t.artist, track_name: t.title }), h);
-        const a = r.ok ? await r.json() : [];
-        j = a.find(x => x.syncedLyrics) || a[0];
+      if (!j || !j.syncedLyrics) {
+        const r2 = await fetch('https://lrclib.net/api/search?' + new URLSearchParams({ artist_name: t.artist, track_name: t.title }), h);
+        const a = r2.ok ? await r2.json() : [];
+        const d = x => Math.abs(x.duration - t.duration / 1000);
+        j = a.filter(x => x.syncedLyrics).sort((x, y) => d(x) - d(y))[0] || j || a[0];
       }
       if (j) { raw = j.syncedLyrics || j.plainLyrics || ''; source = raw ? 'lrclib' : 'none'; }
     } catch {}
@@ -119,11 +132,12 @@ async function loadLyrics(t) {
 const send = (c, d) => win && !win.isDestroyed() && win.webContents.send(c, d);
 const status = s => { lastId = null; send('status', s); };
 async function poll() {
-  if (busy || Date.now() < backoff) return;
+  if (busy || Date.now() < backoff || Date.now() < previewUntil) return;
   busy = true;
   try {
     const t = await token();
     if (!t) return status('Not connected – tray icon → Connect Spotify');
+    const t0 = Date.now();
     const r = await fetch('https://api.spotify.com/v1/me/player/currently-playing', { headers: { Authorization: 'Bearer ' + t } });
     if (r.status === 204) return status('Nothing playing');
     if (r.status === 429) { backoff = Date.now() + (+r.headers.get('retry-after') || 5) * 1000; return; }
@@ -132,7 +146,7 @@ async function poll() {
     if (!it || j.currently_playing_type !== 'track') return status('Not a music track');
     const info = { id: it.id, title: it.name, artist: it.artists[0].name, album: it.album.name, duration: it.duration_ms };
     if (info.id !== lastId) { lastId = info.id; track = info; send('track', { ...info, ...(await loadLyrics(info)) }); }
-    send('progress', { ms: j.progress_ms, playing: j.is_playing });
+    send('progress', { ms: j.progress_ms + (Date.now() - t0) / 2, playing: j.is_playing });
   } catch {} finally { busy = false; }
 }
 
@@ -148,14 +162,29 @@ ipcMain.handle('editor:save', (_, { artist, title, text }) => {
 ipcMain.handle('editor:clientId', (_, id) => { cfg.clientId = id.trim(); wr('config.json', cfg); return true; });
 ipcMain.handle('editor:connect', () => connect());
 
+ipcMain.handle('settings:get', () => settings);
+ipcMain.handle('settings:set', (_, patch) => { settings = { ...settings, ...patch }; wr('settings.json', settings); send('settings', settings); return settings; });
+ipcMain.handle('settings:reset', () => { settings = { ...DEFAULTS }; wr('settings.json', settings); send('settings', settings); return settings; });
+ipcMain.handle('settings:preview', () => {
+  const texts = ['This is how your lyrics will look', 'Adjust the sliders and watch it change', 'The current line is big and bright',
+    'Other lines fade into the background', 'Pick any colors you like', 'Shadows keep text readable', 'Try changing the background opacity',
+    'Bold fonts look great on busy screens', 'Take your time', 'Almost there', 'Looking good', 'Enjoy the music'];
+  previewUntil = Date.now() + 50000; lastId = null;
+  send('track', { id: 'preview', title: 'Sample', artist: 'Preview', album: '', duration: 50000, source: 'preview', plain: '',
+    lines: texts.map((text, i) => ({ t: i * 4000, text })) });
+  send('progress', { ms: 0, playing: true });
+});
+
 app.whenReady().then(() => {
   cfg = rd('config.json', { clientId: process.env.SPOTIFY_CLIENT_ID || '' });
   tokens = rd('tokens.json', {});
+  settings = { ...DEFAULTS, ...rd('settings.json', {}) };
   createOverlay();
   const gs = (k, f) => globalShortcut.register(k, f);
   gs('CommandOrControl+Alt+L', () => setLocked(!locked));
   gs('CommandOrControl+Alt+H', () => win.isVisible() ? win.hide() : win.show());
   gs('CommandOrControl+Alt+E', openEditor);
+  gs('CommandOrControl+Alt+S', openSettings);
   gs('CommandOrControl+Alt+Left', () => send('offset', -250));
   gs('CommandOrControl+Alt+Right', () => send('offset', 250));
   setInterval(poll, 2000); poll();

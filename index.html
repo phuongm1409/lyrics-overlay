@@ -1,19 +1,21 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
-  #box{position:relative;height:100%;box-sizing:border-box;background:rgba(10,10,14,.28);border-radius:18px}
+  :root{--fs:34px;--fw:900;--ff:'Segoe UI';--fst:normal;--align:center;--origin:center;--c:#fff;--ca:#fff;--dim:.4;--near:.65;
+        --shadow:0 0 6px #000,0 2px 10px #000;--bg:rgba(10,10,14,.28);--radius:18px}
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-family:var(--ff),'Segoe UI',system-ui,sans-serif;color:#fff}
+  #box{position:relative;height:100%;box-sizing:border-box;background:var(--bg);border-radius:var(--radius)}
   body.unlocked #box{-webkit-app-region:drag;outline:2px dashed rgba(255,255,255,.45)}
-  #meta{position:absolute;top:8px;left:18px;right:18px;font-size:12px;font-weight:600;opacity:.75;text-shadow:0 1px 4px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2}
+  #meta{position:absolute;top:8px;left:18px;right:18px;font-size:12px;font-weight:600;color:#fff;opacity:.75;text-shadow:0 1px 4px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2}
   #view{position:absolute;inset:26px 20px 8px;overflow:hidden;
     -webkit-mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent)}
   #list{transition:transform .5s cubic-bezier(.22,.8,.25,1);will-change:transform}
-  .ln{text-align:center;font-size:34px;font-weight:900;line-height:1.2;padding:8px 10px;opacity:.4;transform:scale(.8);
-      transition:opacity .35s,transform .35s;text-shadow:0 0 6px #000,0 2px 10px #000,0 0 18px rgba(0,0,0,.8)}
-  .ln.near{opacity:.65}
-  .ln.cur{opacity:1;transform:scale(1)}
-  #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;font-size:24px;font-weight:800;text-shadow:0 0 6px #000,0 2px 10px #000}
-  #plain{position:absolute;inset:26px 20px 8px;white-space:pre-wrap;overflow:auto;text-align:center;font-size:24px;font-weight:800;line-height:1.4;text-shadow:0 0 6px #000,0 2px 10px #000;display:none;-webkit-app-region:no-drag}
+  .ln{text-align:var(--align);font-size:var(--fs);font-weight:var(--fw);font-style:var(--fst);color:var(--c);line-height:1.2;padding:8px 10px;
+      opacity:var(--dim);transform:scale(.8);transform-origin:var(--origin) center;transition:opacity .35s,transform .35s;text-shadow:var(--shadow)}
+  .ln.near{opacity:var(--near)}
+  .ln.cur{opacity:1;transform:scale(1);color:var(--ca)}
+  #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;font-size:calc(var(--fs)*.7);font-weight:var(--fw);color:var(--ca);text-shadow:var(--shadow)}
+  #plain{position:absolute;inset:26px 20px 8px;white-space:pre-wrap;overflow:auto;text-align:var(--align);font-size:calc(var(--fs)*.7);font-weight:var(--fw);font-style:var(--fst);color:var(--ca);line-height:1.4;text-shadow:var(--shadow);display:none;-webkit-app-region:no-drag}
 </style>
 <div id="box">
   <div id="meta"></div>
@@ -25,9 +27,22 @@
 const $ = id => document.getElementById(id);
 let lines = [], els = [], base = 0, at = 0, playing = false, off = 0, last = -2;
 
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+function apply(s) {
+  const set = (k, v) => document.documentElement.style.setProperty(k, v);
+  set('--fs', s.fontSize + 'px'); set('--fw', s.fontWeight); set('--ff', `'${s.fontFamily}'`); set('--fst', s.fontStyle);
+  set('--align', s.align); set('--origin', s.align); set('--c', s.textColor); set('--ca', s.activeColor);
+  set('--dim', s.dimOpacity / 100); set('--near', Math.min(1, s.dimOpacity / 100 + .25));
+  const b = +s.shadowBlur, c = rgba(s.shadowColor, s.shadowOpacity / 100);
+  set('--shadow', b > 0 && s.shadowOpacity > 0 ? `0 0 ${b * .6}px ${c},0 2px ${b}px ${c},0 0 ${b * 1.8}px ${c}` : 'none');
+  set('--bg', rgba(s.bgColor, s.bgOpacity / 100)); set('--radius', s.radius + 'px');
+  requestAnimationFrame(() => { if (lines.length) focusLine(Math.max(last, -1)); });
+}
+api.invoke('settings:get').then(apply);
+api.on('settings', apply);
+
 function showMsg(text) { $('msg').textContent = text; $('msg').style.display = text ? 'flex' : 'none'; }
 function reset() { lines = []; els = []; last = -2; $('list').innerHTML = ''; $('plain').style.display = 'none'; $('plain').textContent = ''; }
-
 function build() {
   const list = $('list'); list.innerHTML = '';
   els = lines.map(l => { const d = document.createElement('div'); d.className = 'ln'; d.textContent = l.text || '♪'; list.appendChild(d); return d; });
