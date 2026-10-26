@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-family:'Segoe UI',system-ui,sans-serif;color:#fff}
+  #box{height:100%;box-sizing:border-box;padding:14px 24px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;background:rgba(10,10,14,.55);border-radius:18px}
+  body.unlocked #box{-webkit-app-region:drag;outline:2px dashed rgba(255,255,255,.45)}
+  .l{margin:3px 0;text-shadow:0 2px 8px #000;line-height:1.25}
+  #prev,#next{font-size:18px;opacity:.5}
+  #cur{font-size:30px;font-weight:700}
+  #meta{position:absolute;top:6px;left:16px;font-size:11px;opacity:.55}
+  #plain{white-space:pre-wrap;overflow:auto;max-height:100%;font-size:18px;-webkit-app-region:no-drag;display:none}
+</style>
+<div id="box">
+  <div id="meta"></div>
+  <div class="l" id="prev"></div><div class="l" id="cur"></div><div class="l" id="next"></div>
+  <div id="plain"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let lines = [], base = 0, at = 0, playing = false, off = 0, last = -2;
+
+function showText(msg, plain) {            // non-synced states
+  $('prev').textContent = $('next').textContent = '';
+  $('cur').textContent = plain ? '' : msg;
+  $('plain').style.display = plain ? 'block' : 'none';
+  $('plain').textContent = plain || '';
+}
+function showLines(p, c, n) {
+  $('plain').style.display = 'none';
+  $('prev').textContent = p ? p.text : '';
+  $('cur').textContent = c ? (c.text || '♪') : '♪';
+  $('next').textContent = n ? n.text : '';
+}
+api.on('track', t => {
+  lines = t.lines; last = -2;
+  $('meta').textContent = `${t.artist} – ${t.title}  (${t.source})`;
+  if (!lines.length) showText('No lyrics found – press Ctrl+Alt+E to add them', t.plain);
+});
+api.on('status', s => { lines = []; $('meta').textContent = ''; showText(s); });
+api.on('progress', p => { base = p.ms; at = performance.now(); playing = p.playing; });
+api.on('locked', v => document.body.classList.toggle('unlocked', !v));
+api.on('offset', d => { off += d; $('meta').textContent = `sync offset ${off} ms`; });
+showText('Waiting for Spotify…');
+
+(function frame() {
+  if (lines.length) {
+    const pos = base + (playing ? performance.now() - at : 0) + off;
+    let i = -1;
+    while (i + 1 < lines.length && lines[i + 1].t <= pos) i++;
+    if (i !== last) { last = i; showLines(lines[i - 1], lines[i], lines[i + 1]); }
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
