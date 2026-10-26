@@ -15,7 +15,7 @@
   "build": {
     "appId": "com.example.lyricsoverlay",
     "productName": "LyricsOverlay",
-    "win": { "target": ["portable"] },
+    "win": { "target": ["portable"], "icon": "app-icon.png" },
     "files": ["main.js", "preload.js", "index.html", "editor.html", "icon.png", "package.json"]
   }
 }
