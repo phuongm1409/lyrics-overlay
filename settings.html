@@ -1,16 +1,24 @@
 <!doctype html>
 <meta charset="utf-8">
+<title>Lyrics Overlay Settings</title>
 <style>
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:#16161c;color:#eee;margin:0;padding:16px 20px}
-  h4{margin:18px 0 6px;color:#1db954;font-size:13px;text-transform:uppercase;letter-spacing:.08em}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#181122;color:#eee;margin:0;padding:16px 20px}
+  h4{margin:18px 0 6px;color:#aaff00;font-size:13px;text-transform:uppercase;letter-spacing:.08em}
   .r{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:14px} .r label{width:150px;flex:none}
   .r input[type=range]{flex:1} .r select{flex:1;background:#22222b;color:#eee;border:1px solid #444;border-radius:6px;padding:5px}
   .r input[type=color]{width:60px;height:28px;border:0;background:none;padding:0} .v{width:48px;text-align:right;opacity:.7;font-size:12px}
-  button{background:#1db954;color:#000;border:0;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;margin:16px 8px 0 0} button.g{background:#333;color:#eee}
+  button{background:#aaff00;color:#000;border:0;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;margin:16px 8px 0 0} button.g{background:#333;color:#eee}
+  input[type=range],input[type=checkbox]{accent-color:#aaff00}
+  input[type=checkbox]{width:17px;height:17px}
+  button:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid #aaff00;outline-offset:2px}
+  .actions{display:flex;flex-wrap:wrap;gap:0 3px}
   small{display:block;opacity:.6;margin-top:10px}
 </style>
 <div id="f"></div>
+<div class="actions">
 <button id="pv">Preview sample lyrics (50s)</button><button id="rs" class="g">Reset to defaults</button>
+<button id="ed" class="g">Lyrics editor / Spotify setup</button>
+</div>
 <small>Changes apply to the overlay instantly and are saved automatically.</small>
 <script>
 const FONTS = ['Segoe UI','Arial','Verdana','Trebuchet MS','Georgia','Times New Roman','Consolas','Impact','Comic Sans MS'].map(x => [x, x]);
@@ -22,7 +30,7 @@ const F = [
   ['fontStyle', 'Style', 'select', [['normal', 'Normal'], ['italic', 'Italic']]],
   ['align', 'Alignment', 'select', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']]],
   ['Colors'],
-  ['activeColor', 'Current line', 'color'],
+  ['sweepColor', 'Sweep highlight', 'color'],
   ['textColor', 'Other lines', 'color'],
   ['dimOpacity', 'Other lines visibility', 'range', 10, 100, 1, '%'],
   ['Shadow'],
@@ -31,30 +39,42 @@ const F = [
   ['shadowOpacity', 'Shadow strength', 'range', 0, 100, 1, '%'],
   ['Background'],
   ['bgColor', 'Color', 'color'],
-  ['bgOpacity', 'Opacity', 'range', 0, 100, 1, '%'],
-  ['radius', 'Corner roundness', 'range', 0, 40, 1, 'px']
+  ['bgOpacity', 'Background opacity', 'range', 0, 100, 1, '%'],
+  ['radius', 'Corner roundness', 'range', 0, 40, 1, 'px'],
+  ['Visibility'],
+  ['showTrack', 'Track and artist', 'checkbox'],
+  ['showSource', 'Lyrics source', 'checkbox'],
+  ['showPrevious', 'Previous lyric', 'checkbox'],
+  ['showNext', 'Next lyric', 'checkbox'],
+  ['showProgress', 'Playback progress', 'checkbox'],
+  ['showStatus', 'Status messages', 'checkbox'],
+  ['Timing'],
+  ['syncOffset', 'Sync offset', 'range', -5000, 5000, 250, ' ms']
 ];
 function render(vals) {
   const root = document.getElementById('f'); root.innerHTML = '';
   for (const [k, label, type, a, b, step, unit] of F) {
     if (!label) { const h = document.createElement('h4'); h.textContent = k; root.appendChild(h); continue; }
     const row = document.createElement('div'); row.className = 'r';
-    const l = document.createElement('label'); l.textContent = label; row.appendChild(l);
+    const l = document.createElement('label'); l.textContent = label; l.htmlFor = k; row.appendChild(l);
     let inp;
     if (type === 'select') {
       inp = document.createElement('select');
       for (const [v, t] of a) { const o = document.createElement('option'); o.value = v; o.textContent = t; inp.appendChild(o); }
     } else { inp = document.createElement('input'); inp.type = type; if (type === 'range') { inp.min = a; inp.max = b; inp.step = step; } }
-    inp.value = vals[k]; row.appendChild(inp);
+    inp.id = k;
+    if (type === 'checkbox') inp.checked = vals[k]; else inp.value = vals[k];
+    row.appendChild(inp);
     let out; if (type === 'range') { out = document.createElement('span'); out.className = 'v'; out.textContent = vals[k] + unit; row.appendChild(out); }
     inp.addEventListener('input', () => {
       if (out) out.textContent = inp.value + unit;
-      api.invoke('settings:set', { [k]: type === 'range' ? Number(inp.value) : inp.value });
+      api.invoke('settings:set', { [k]: type === 'checkbox' ? inp.checked : type === 'range' ? Number(inp.value) : inp.value });
     });
     root.appendChild(row);
   }
 }
 api.invoke('settings:get').then(render);
 document.getElementById('rs').onclick = () => api.invoke('settings:reset').then(render);
+document.getElementById('ed').onclick = () => api.invoke('editor:open');
 document.getElementById('pv').onclick = () => api.invoke('settings:preview');
 </script>

@@ -1,6 +1,6 @@
 {
   "name": "lyrics-overlay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Spotify lyrics overlay",
   "author": "you",
   "main": "main.js",
@@ -15,7 +15,23 @@
   "build": {
     "appId": "com.example.lyricsoverlay",
     "productName": "LyricsOverlay",
-    "win": { "target": ["portable"], "icon": "app-icon.png" },
-    "files": ["main.js", "preload.js", "index.html", "editor.html", "settings.html", "icon.png", "package.json"]
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "subtitles.js",
+      "overlay.js",
+      "index.html",
+      "editor.html",
+      "settings.html",
+      "*.svg",
+      "assets/icon.png",
+      "package.json"
+    ]
   }
 }

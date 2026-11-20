@@ -1,81 +1,76 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'unsafe-inline';">
+<title>Lyrics Overlay</title>
 <style>
-  :root{--fs:34px;--fw:900;--ff:'Segoe UI';--fst:normal;--align:center;--origin:center;--c:#fff;--ca:#fff;--dim:.4;--near:.65;
-        --shadow:0 0 6px #000,0 2px 10px #000;--bg:rgba(10,10,14,.28);--radius:18px}
-  html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-family:var(--ff),'Segoe UI',system-ui,sans-serif;color:#fff}
-  #box{position:relative;height:100%;box-sizing:border-box;background:var(--bg);border-radius:var(--radius)}
-  body.unlocked #box{-webkit-app-region:drag;outline:2px dashed rgba(255,255,255,.45)}
-  #meta{position:absolute;top:8px;left:18px;right:18px;font-size:12px;font-weight:600;color:#fff;opacity:.75;text-shadow:0 1px 4px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:2}
-  #view{position:absolute;inset:26px 20px 8px;overflow:hidden;
-    -webkit-mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent)}
-  #list{transition:transform .5s cubic-bezier(.22,.8,.25,1);will-change:transform}
-  .ln{text-align:var(--align);font-size:var(--fs);font-weight:var(--fw);font-style:var(--fst);color:var(--c);line-height:1.2;padding:8px 10px;
-      opacity:var(--dim);transform:scale(.8);transform-origin:var(--origin) center;transition:opacity .35s,transform .35s;text-shadow:var(--shadow)}
-  .ln.near{opacity:var(--near)}
-  .ln.cur{opacity:1;transform:scale(1);color:var(--ca)}
-  #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 30px;font-size:calc(var(--fs)*.7);font-weight:var(--fw);color:var(--ca);text-shadow:var(--shadow)}
-  #plain{position:absolute;inset:26px 20px 8px;white-space:pre-wrap;overflow:auto;text-align:var(--align);font-size:calc(var(--fs)*.7);font-weight:var(--fw);font-style:var(--fst);color:var(--ca);line-height:1.4;text-shadow:var(--shadow);display:none;-webkit-app-region:no-drag}
-</style>
-<div id="box">
-  <div id="meta"></div>
-  <div id="view"><div id="list"></div></div>
-  <div id="plain"></div>
-  <div id="msg"></div>
-</div>
-<script>
-const $ = id => document.getElementById(id);
-let lines = [], els = [], base = 0, at = 0, playing = false, off = 0, last = -2;
-
-function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
-function apply(s) {
-  const set = (k, v) => document.documentElement.style.setProperty(k, v);
-  set('--fs', s.fontSize + 'px'); set('--fw', s.fontWeight); set('--ff', `'${s.fontFamily}'`); set('--fst', s.fontStyle);
-  set('--align', s.align); set('--origin', s.align); set('--c', s.textColor); set('--ca', s.activeColor);
-  set('--dim', s.dimOpacity / 100); set('--near', Math.min(1, s.dimOpacity / 100 + .25));
-  const b = +s.shadowBlur, c = rgba(s.shadowColor, s.shadowOpacity / 100);
-  set('--shadow', b > 0 && s.shadowOpacity > 0 ? `0 0 ${b * .6}px ${c},0 2px ${b}px ${c},0 0 ${b * 1.8}px ${c}` : 'none');
-  set('--bg', rgba(s.bgColor, s.bgOpacity / 100)); set('--radius', s.radius + 'px');
-  requestAnimationFrame(() => { if (lines.length) focusLine(Math.max(last, -1)); });
-}
-api.invoke('settings:get').then(apply);
-api.on('settings', apply);
-
-function showMsg(text) { $('msg').textContent = text; $('msg').style.display = text ? 'flex' : 'none'; }
-function reset() { lines = []; els = []; last = -2; $('list').innerHTML = ''; $('plain').style.display = 'none'; $('plain').textContent = ''; }
-function build() {
-  const list = $('list'); list.innerHTML = '';
-  els = lines.map(l => { const d = document.createElement('div'); d.className = 'ln'; d.textContent = l.text || '♪'; list.appendChild(d); return d; });
-}
-function focusLine(i) {
-  const c = Math.max(i, 0);
-  els.forEach((e, k) => { const d = Math.abs(k - i); e.className = 'ln' + (k === i ? ' cur' : d === 1 ? ' near' : ''); });
-  const e = els[c]; if (!e) return;
-  $('list').style.transform = `translateY(${$('view').clientHeight / 2 - (e.offsetTop + e.offsetHeight / 2)}px)`;
-}
-
-api.on('track', t => {
-  reset(); lines = t.lines; off = 0;
-  const kind = lines.length ? 'synced' : t.plain ? 'unsynced' : 'none';
-  $('meta').textContent = `${t.artist} – ${t.title}  (${t.source}, ${kind})`;
-  if (lines.length) { showMsg(''); build(); focusLine(-1); }
-  else if (t.plain) { showMsg(''); $('plain').textContent = t.plain; $('plain').style.display = 'block'; }
-  else showMsg('No lyrics found – press Ctrl+Alt+I to add them');
-});
-api.on('status', s => { reset(); $('meta').textContent = ''; showMsg(s); });
-api.on('progress', p => { base = p.ms; at = performance.now(); playing = p.playing; });
-api.on('locked', v => document.body.classList.toggle('unlocked', !v));
-api.on('offset', d => { off += d; $('meta').textContent = `sync offset ${off} ms`; });
-window.addEventListener('resize', () => { if (lines.length) focusLine(last); });
-showMsg('Waiting for Spotify…');
-
-(function frame() {
-  if (lines.length) {
-    const pos = base + (playing ? performance.now() - at : 0) + off;
-    let i = -1;
-    while (i + 1 < lines.length && lines[i + 1].t <= pos) i++;
-    if (i !== last) { last = i; focusLine(i); }
+  *, *::before, *::after { box-sizing: border-box }
+  :root {
+    --accent: #aaff00; --ink: #aba2c3; --panel: rgba(22,14,43,.86); --outline: rgba(183,160,232,.36);
+    --muted: #cabfdf; --align: center; --font: 'Segoe UI'; --size: 36px; --weight: 700;
+    --font-style: normal; --shadow: 0 2px 12px #120e1c; --radius: 17px; --dim: .85;
   }
-  requestAnimationFrame(frame);
-})();
-</script>
+  html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; color: #f6f1ff;
+    font-family: 'Segoe UI',system-ui,sans-serif; }
+  #shell { position: absolute; inset: 5px; display: flex; flex-direction: column; overflow: hidden;
+    border-radius: var(--radius); background: var(--panel); outline: 1px solid var(--outline); outline-offset: -1px; }
+  body.unlocked #shell { outline: 1px dashed var(--accent); }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    height: 50px; flex: 0 0 50px; padding: 0 8px 0 16px; }
+  body.unlocked .top { -webkit-app-region: drag; cursor: move }
+  .identity { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+  .identity img { width: 22px; height: 22px; flex: none; }
+  #meta { font-size: 12px; font-weight: 600; color: #f0e8fc; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; text-shadow: var(--shadow); }
+  #source { color: var(--muted); font-size: 11px; font-weight: 500; padding-inline-start: 5px; }
+  .controls { display: flex; flex: none; gap: 3px; -webkit-app-region: no-drag; }
+  button { display: grid; place-items: center; width: 35px; height: 34px; padding: 0; border: 1px solid transparent;
+    border-radius: 8px; background: rgba(26,19,41,.82); cursor: pointer; color: white; }
+  button:hover, button:focus-visible { outline: none; background: #312544; border-color: var(--accent); }
+  button img { width: 17px; height: 17px; filter: invert(1); pointer-events: none; }
+  button[aria-pressed="true"] { border-color: rgba(170,255,0,.48); background: #29263b; }
+  #lyrics { flex: 1; display: grid; align-content: center; padding: 5px 24px 16px; gap: 7px; overflow-y: auto;
+    scrollbar-width: thin; text-align: var(--align); }
+  #active { font: var(--font-style) var(--weight) var(--size)/1.13 var(--font), 'Segoe UI', sans-serif;
+    letter-spacing: -.035em; overflow-wrap: anywhere; }
+  .sweep-line { display: inline-block; max-width: 100%; }
+  .sweep-text { display: block; background: linear-gradient(90deg,var(--accent) var(--fill,0%),var(--ink) var(--fill,0%));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(var(--shadow)); }
+  .context { color: var(--ink); opacity: var(--dim); font: var(--font-style) 500 max(12px,calc(var(--size)*.45))/1.25 var(--font),sans-serif;
+    text-shadow: var(--shadow); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #message, #plain { color: var(--ink); font: 500 max(15px,calc(var(--size)*.55))/1.35 var(--font),sans-serif; text-shadow: var(--shadow); }
+  #plain { white-space: pre-wrap; }
+  #progress { height: 3px; flex: 0 0 3px; margin: 0 18px 12px; border-radius: 3px; background: rgba(195,183,221,.27); }
+  #progress span { display: block; height: 100%; width: 100%; background: var(--accent); border-radius: 3px;
+    transform-origin: left; transform: scaleX(0); }
+  #notice { position: absolute; right: 14px; bottom: 10px; max-width: calc(100% - 28px);
+    border: 1px solid #536737; border-radius: 6px; padding: 5px 9px; color: #d8ff9b;
+    background: #221c2e; font-size: 12px; pointer-events: none; }
+  [hidden] { display: none !important }
+</style>
+<div id="shell">
+  <header class="top">
+    <div class="identity">
+      <img src="icon.svg" alt="">
+      <div id="meta"><span id="track-label"></span><span id="source"></span></div>
+    </div>
+    <nav class="controls" aria-label="Overlay controls">
+      <button id="lock" type="button" aria-label="Unlock overlay" title="Unlock overlay" aria-pressed="true"><img src="locked.svg" alt=""></button>
+      <button id="upload" type="button" aria-label="Import timed lyrics" title="Import timed lyrics"><img src="upload.svg" alt=""></button>
+      <button id="menu" type="button" aria-label="Settings" title="Settings"><img src="menu.svg" alt=""></button>
+      <button id="close" type="button" aria-label="Hide or exit" title="Hide or exit"><img src="close.svg" alt=""></button>
+    </nav>
+  </header>
+  <main id="lyrics">
+    <div id="previous" class="context" hidden></div>
+    <div id="active" hidden></div>
+    <div id="next" class="context" hidden></div>
+    <div id="plain" hidden></div>
+    <div id="message" role="status">Waiting for Spotify…</div>
+  </main>
+  <div id="progress" aria-hidden="true" hidden><span></span></div>
+</div>
+<div id="notice" role="status" hidden></div>
+<script src="overlay.js"></script>
+</html>
