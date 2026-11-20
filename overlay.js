@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 let current = null;
 let settings = {};
 let lines = [];
+let positionLocked = true;
 let base = 0, at = 0, playing = false;
 let activeIndex = -2, spans = [], noticeTimeout, rawStatus = 'Waiting for Spotify…';
 
@@ -35,9 +36,10 @@ function applySettings(value) {
 
 function lockUI(locked) {
   const button = $('lock');
-  const label = locked ? 'Unlock overlay' : 'Lock overlay';
+  positionLocked = locked;
+  const label = locked ? 'Unlock position' : 'Lock position';
   button.querySelector('img').src = locked ? 'locked.svg' : 'unlocked.svg';
-  button.title = label;
+  button.title = locked ? label : 'Click to lock, drag to move, or Shift-drag to resize';
   button.setAttribute('aria-label', label);
   button.setAttribute('aria-pressed', String(locked));
   document.body.classList.toggle('unlocked', !locked);
@@ -152,8 +154,53 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-for (const id of ['lock', 'upload', 'menu', 'close']) {
-  $(id).addEventListener('click', () => api.invoke('overlay:' + id).catch(() => notice('This action could not be completed.')));
+const buttons = ['lock', 'upload', 'menu', 'close'].map($);
+const lockButton = $('lock');
+let dragPointer = null;
+let suppressLockClick = false;
+
+function reportHitAreas() {
+  const rects = buttons.map(button => {
+    const { left, top, right, bottom } = button.getBoundingClientRect();
+    return { left, top, right, bottom };
+  });
+  void api.invoke('overlay:hit-areas', rects);
+}
+new ResizeObserver(reportHitAreas).observe(document.documentElement);
+
+lockButton.addEventListener('pointerdown', event => {
+  suppressLockClick = false;
+  if (positionLocked || event.button !== 0 || !event.isPrimary) return;
+  lockButton.setPointerCapture(event.pointerId);
+  dragPointer = event.pointerId;
+  void api.invoke('overlay:drag-start', event.shiftKey);
+});
+
+function finishDrag(event) {
+  if (dragPointer !== event.pointerId) return;
+  dragPointer = null;
+  if (event.type === 'pointerup') {
+    // Catch the click that follows pointerup until the main process says whether this was a drag.
+    suppressLockClick = true;
+    void api.invoke('overlay:drag-end').then(moved => {
+      if (!moved) return api.invoke('overlay:lock');
+    });
+  } else {
+    void api.invoke('overlay:drag-end');
+  }
+}
+for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  lockButton.addEventListener(event, finishDrag);
+}
+
+for (const button of buttons) {
+  button.addEventListener('click', event => {
+    if (button === lockButton && suppressLockClick && event.detail > 0) {
+      suppressLockClick = false;
+      return;
+    }
+    void api.invoke('overlay:' + button.id).catch(() => notice('This action could not be completed.'));
+  });
 }
 api.invoke('settings:get').then(applySettings);
 api.on('settings', applySettings);

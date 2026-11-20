@@ -13,7 +13,24 @@
   button:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid #aaff00;outline-offset:2px}
   .actions{display:flex;flex-wrap:wrap;gap:0 3px}
   small{display:block;opacity:.6;margin-top:10px}
+  #drive { border-bottom:1px solid #3e3150; padding-bottom:16px; }
+  #drive h4 { margin-top:0; }
+  #drive p { margin:6px 0; font-size:13px; line-height:1.4; }
+  #drive-status { color:#eadff5; overflow-wrap:anywhere; }
+  #drive button { margin-top:8px; }
+  #drive button:disabled { opacity:.55; cursor:default; }
+  [hidden] { display:none !important; }
 </style>
+<section id="drive" aria-labelledby="drive-title">
+  <h4 id="drive-title">Google Drive</h4>
+  <p id="drive-status" role="status">Checking Google Drive…</p>
+  <p id="drive-help">Sign in to sync this device’s lyrics and original subtitle files with the Google account you choose.</p>
+  <button id="google-sign-in">Sign in with Google</button>
+  <button id="google-configure" class="g">Load OAuth file</button>
+  <button id="google-sync" hidden>Sync now</button>
+  <button id="google-folder" class="g" hidden>Open Drive folder</button>
+  <button id="google-disconnect" class="g" hidden>Disconnect</button>
+</section>
 <div id="f"></div>
 <div class="actions">
 <button id="pv">Preview sample lyrics (50s)</button><button id="rs" class="g">Reset to defaults</button>
@@ -21,7 +38,7 @@
 </div>
 <small>Changes apply to the overlay instantly and are saved automatically.</small>
 <script>
-const FONTS = ['Segoe UI','Arial','Verdana','Trebuchet MS','Georgia','Times New Roman','Consolas','Impact','Comic Sans MS'].map(x => [x, x]);
+const FONTS = ['Segoe UI','Lexend Deca','Arial','Verdana','Trebuchet MS','Georgia','Times New Roman','Consolas','Impact','Comic Sans MS'].map(x => [x, x]);
 const F = [
   ['Text'],
   ['fontSize', 'Font size', 'range', 16, 64, 1, 'px'],
@@ -73,6 +90,29 @@ function render(vals) {
     root.appendChild(row);
   }
 }
+const driveButtons = {
+  'google-sign-in': 'google:sign-in', 'google-configure': 'google:configure',
+  'google-sync': 'google:sync', 'google-folder': 'google:open-folder', 'google-disconnect': 'google:disconnect'
+};
+const byId = id => document.getElementById(id);
+function showDrive(state) {
+  byId('drive-status').textContent = [state.email, state.message || (state.email ? 'Connected.' : 'Disconnected.')].filter(Boolean).join(' · ');
+  byId('drive-help').textContent = state.email
+    ? (state.lastSynced ? 'Last synced ' + new Date(state.lastSynced).toLocaleString() : 'Local lyrics are available offline.')
+    : state.configured ? 'Sign in to sync this device’s lyrics and original subtitles with the Google account you choose.'
+    : 'Sign in to sync this device’s library. Choose your Google Desktop OAuth JSON when prompted.';
+  for (const id of Object.keys(driveButtons)) byId(id).disabled = state.busy;
+  byId('google-sign-in').hidden = byId('google-configure').hidden = !!state.email;
+  byId('google-sync').hidden = byId('google-disconnect').hidden = !state.email;
+  byId('google-folder').hidden = !state.folder;
+}
+for (const [id, action] of Object.entries(driveButtons)) {
+  byId(id).onclick = () => api.invoke(action).catch(error => {
+    byId('drive-status').textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+  });
+}
+api.on('google:state', showDrive);
+api.invoke('google:state').then(showDrive);
 api.invoke('settings:get').then(render);
 document.getElementById('rs').onclick = () => api.invoke('settings:reset').then(render);
 document.getElementById('ed').onclick = () => api.invoke('editor:open');

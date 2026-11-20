@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, shell, screen, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, dialog, nativeImage, safeStorage } = require('electron');
 const path = require('path'), fs = require('fs'), http = require('http'), crypto = require('crypto');
 
 const { parse, decodeFile } = require('./subtitles');
+const { GoogleDrive, SUBTITLE_LIMIT, atomicWrite, lyricsMap, readJson } = require('./google-drive');
 const assets = name => path.join(__dirname, 'assets', name);
 
 const REDIRECT = 'http://127.0.0.1:8888/callback';
@@ -14,7 +15,8 @@ let win, editor, tray, locked = true, track = null, lastId = null, lastRaw = '',
 let cfg = {}, tokens = {}, settingsWin, previewUntil = 0;
 let ignoreMouse = false, closePrompt = false, importing = false, quitting = false;
 let trackRevision = 0;
-const TOOLBAR_WIDTH = 171, TOOLBAR_HEIGHT = 55;
+const MIN_WIDTH = 310, MIN_HEIGHT = 164;
+let hitAreas = [], drag = null;
 const DEFAULTS = { fontSize: 36, fontWeight: 700, fontFamily: 'Segoe UI', fontStyle: 'normal', align: 'center',
   sweepColor: '#aaff00', textColor: '#aba2c3', dimOpacity: 85, shadowColor: '#120e1c', shadowBlur: 12, shadowOpacity: 90,
   bgColor: '#160e2b', bgOpacity: 86, radius: 17, syncOffset: 0,
@@ -26,7 +28,7 @@ function createOverlay() {
   const { x, y, width, height } = screen.getPrimaryDisplay().workArea;
   const w = Math.min(660, width), h = Math.min(224, height);
   win = new BrowserWindow({
-    width: w, height: h, minWidth: 310, minHeight: 164,
+    width: w, height: h, minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT, resizable: false,
     x: x + Math.round((width - w) / 2), y: Math.max(y, y + height - h - 38),
     transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false,
     icon: assets('icon.png'),
@@ -39,23 +41,38 @@ function createOverlay() {
     if (!quitting) { event.preventDefault(); confirmClose(); }
   });
   win.on('show', syncMouse);
+  for (const event of ['blur', 'hide']) win.on(event, () => { drag = null; });
+  win.setIgnoreMouseEvents(true);
+  ignoreMouse = true;
   win.loadFile('index.html');
 }
 
 function syncMouse() {
   if (!win || win.isDestroyed() || !win.isVisible()) return;
-  const bounds = win.getBounds();
-  const pt = screen.getCursorScreenPoint();
-  const inToolbar = pt.x >= bounds.x + bounds.width - TOOLBAR_WIDTH && pt.x < bounds.x + bounds.width
-    && pt.y >= bounds.y && pt.y < bounds.y + TOOLBAR_HEIGHT;
-  const shouldIgnore = locked && !inToolbar && !closePrompt && !importing;
+  const point = screen.getCursorScreenPoint();
+  if (drag) updateDrag(point);
+  const bounds = win.getContentBounds();
+  const x = point.x - bounds.x, y = point.y - bounds.y;
+  const inButton = hitAreas.some(({ left, top, right, bottom }) =>
+    x >= left && x < right && y >= top && y < bottom);
+  const shouldIgnore = !inButton && !drag;
   if (shouldIgnore === ignoreMouse) return;
   ignoreMouse = shouldIgnore;
   win.setIgnoreMouseEvents(shouldIgnore);
 }
 
+function updateDrag(point) {
+  const dx = point.x - drag.start.x, dy = point.y - drag.start.y;
+  if (!drag.moved && Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
+  drag.moved = true;
+  const { x, y, width, height } = drag.bounds;
+  if (drag.resize) win.setSize(Math.max(MIN_WIDTH, width + dx), Math.max(MIN_HEIGHT, height + dy));
+  else win.setPosition(x + dx, y + dy);
+}
+
 function setLocked(value) {
   locked = value;
+  drag = null;
   syncMouse();
   send('locked', value);
   buildTray();
@@ -95,7 +112,7 @@ async function confirmClose() {
   }
 }
 
-let pendingImport = null;
+let pendingImport = null, pendingOriginal = null, googleDrive;
 function openEditor() {
   if (editor && !editor.isDestroyed()) { editor.show(); editor.focus(); return; }
   editor = new BrowserWindow({ width: 640, height: 700, title: 'Lyrics Overlay – Editor', icon: assets('icon.png'),
@@ -119,7 +136,7 @@ function buildTray() {
   tray.setToolTip('Lyrics Overlay');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show / hide', click: toggleOverlay },
-    { label: locked ? 'Unlock (move/resize)' : 'Lock (click-through)', click: () => setLocked(!locked) },
+    { label: locked ? 'Unlock position' : 'Lock position', click: () => setLocked(!locked) },
     { label: 'Import timed lyrics…', click: () => { showOverlay(); importLyrics(); } },
     { label: 'Add / edit lyrics…', click: openEditor },
     { label: 'Settings…', click: openSettings },
@@ -297,12 +314,15 @@ async function poll() {
   }
 }
 
-function saveLyrics({ artist, title, text }) {
+function saveLyrics({ artist, title, text }, original) {
   if (!artist.trim() || !title.trim()) throw new Error('Enter the artist and song title first.');
-  const db = rd('lyrics.json', {}), k = key(artist, title);
+  const db = lyricsMap(readJson(path.join(U(), 'lyrics.json'), {})), k = key(artist, title);
   if (text.trim()) db[k] = text; else delete db[k];
-  wr('lyrics.json', db);
+  if (original) googleDrive.keepOriginal(original.name, original.bytes);
+  atomicWrite(path.join(U(), 'lyrics.json'), JSON.stringify(db, null, 2));
   pendingImport = null;
+  pendingOriginal = null;
+  googleDrive.schedule();
   if (track && key(track.artist, track.title) === k && Date.now() >= previewUntil) {
     void refreshLyrics(track, ++trackRevision);
   }
@@ -324,17 +344,21 @@ async function importLyrics() {
     });
     if (canceled) return;
     const file = filePaths[0];
-    if ((await fs.promises.stat(file)).size > 8 * 1024 * 1024) throw new Error('Choose a lyrics file under 8 MB.');
-    const raw = decodeFile(await fs.promises.readFile(file));
+    if ((await fs.promises.stat(file)).size > SUBTITLE_LIMIT) throw new Error('Choose a lyrics file under 8 MB.');
+    const bytes = await fs.promises.readFile(file);
+    if (bytes.length > SUBTITLE_LIMIT) throw new Error('Choose a lyrics file under 8 MB.');
+    const original = { name: path.basename(file), bytes };
+    const raw = decodeFile(bytes);
     const { lines } = parse(raw);
     if (!lines.some(line => line.text)) throw new Error('No timestamped lyrics found. Try LRC, SRT, VTT, SBV, or a TXT file with timestamps.');
     if (!selectedTrack) {
       pendingImport = { track: null, text: raw };
+      pendingOriginal = original;
       if (editor && !editor.isDestroyed()) editor.webContents.send('editor:import', pendingImport);
       openEditor();
       return;
     }
-    saveLyrics({ artist: selectedTrack.artist, title: selectedTrack.title, text: raw });
+    saveLyrics({ artist: selectedTrack.artist, title: selectedTrack.title, text: raw }, original);
     send('notice', 'Imported ' + lines.length + ' timed lines for ' + selectedTrack.title);
   } catch (err) {
     await dialog.showMessageBox(win, { type: 'warning', title: 'Import timed lyrics', message: err.message, buttons: ['OK'] });
@@ -344,13 +368,31 @@ async function importLyrics() {
   }
 }
 
+ipcMain.handle('overlay:hit-areas', ({ sender }, rects) => {
+  if (sender !== win?.webContents || !Array.isArray(rects) || rects.length !== 4) return;
+  if (!rects.every(rect => rect && ['left', 'top', 'right', 'bottom'].every(key => Number.isFinite(rect[key])))) return;
+  hitAreas = rects;
+  syncMouse();
+});
+ipcMain.handle('overlay:drag-start', ({ sender }, resize) => {
+  if (sender !== win?.webContents || locked || drag || closePrompt || importing) return;
+  drag = { start: screen.getCursorScreenPoint(), bounds: win.getBounds(), resize: resize === true, moved: false };
+});
+ipcMain.handle('overlay:drag-end', ({ sender }) => {
+  if (sender !== win?.webContents || !drag) return true;
+  updateDrag(screen.getCursorScreenPoint());
+  const { moved } = drag;
+  drag = null;
+  syncMouse();
+  return moved;
+});
 ipcMain.handle('overlay:lock', () => setLocked(!locked));
 ipcMain.handle('overlay:close', () => confirmClose());
 ipcMain.handle('overlay:upload', () => importLyrics());
 ipcMain.handle('overlay:menu', () => { openSettings(); });
 ipcMain.handle('editor:open', () => { openEditor(); });
 ipcMain.handle('editor:init', () => ({ track, text: lastRaw, ...pendingImport, clientId: cfg.clientId || '', connected: !!tokens.access }));
-ipcMain.handle('editor:save', (_, data) => saveLyrics(data));
+ipcMain.handle('editor:save', (_, data) => saveLyrics(data, pendingOriginal));
 ipcMain.handle('editor:clientId', (_, id) => {
   const next = id.trim();
   if (next !== cfg.clientId) { tokens = {}; wr('tokens.json', tokens); }
@@ -359,6 +401,36 @@ ipcMain.handle('editor:clientId', (_, id) => {
   return true;
 });
 ipcMain.handle('editor:connect', () => { connect(); });
+
+async function configureGoogle() {
+  const result = await dialog.showOpenDialog(settingsWin, {
+    title: 'Load Google Desktop OAuth JSON', properties: ['openFile'],
+    filters: [{ name: 'OAuth configuration', extensions: ['json'] }]
+  });
+  if (result.canceled) return false;
+  const file = result.filePaths[0];
+  if ((await fs.promises.stat(file)).size > 65536) throw new Error('Choose the downloaded Desktop OAuth JSON.');
+  let data;
+  try { data = JSON.parse(await fs.promises.readFile(file, 'utf8')); }
+  catch { throw new Error('Choose a valid Google Desktop OAuth JSON file.'); }
+  googleDrive.configure(data);
+  return true;
+}
+
+ipcMain.handle('google:state', () => googleDrive.state);
+ipcMain.handle('google:configure', () => configureGoogle());
+ipcMain.handle('google:sign-in', async () => {
+  if (!googleDrive.state.configured && !(await configureGoogle())) return;
+  await googleDrive.signIn();
+});
+ipcMain.handle('google:sync', () => googleDrive.sync());
+ipcMain.handle('google:disconnect', () => {
+  if (!googleDrive.state.busy) googleDrive.disconnect();
+});
+ipcMain.handle('google:open-folder', () => {
+  const id = googleDrive.state.folder;
+  if (id) return shell.openExternal('https://drive.google.com/drive/folders/' + encodeURIComponent(id));
+});
 
 ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (_, patch) => { settings = { ...settings, ...patch }; wr('settings.json', settings); send('settings', settings); return settings; });
@@ -378,9 +450,19 @@ app.whenReady().then(() => {
   cfg = rd('config.json', { clientId: process.env.SPOTIFY_CLIENT_ID || '' });
   tokens = rd('tokens.json', {});
   settings = { ...DEFAULTS, ...rd('settings.json', {}) };
+  googleDrive = new GoogleDrive({
+    directory: U(), safeStorage, openExternal: url => shell.openExternal(url),
+    onStatus: state => {
+      if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('google:state', state);
+    },
+    onLyricsChanged: () => {
+      if (track && Date.now() >= previewUntil) void refreshLyrics(track, ++trackRevision);
+    }
+  });
+  googleDrive.start();
   createOverlay();
   buildTray();
-  setInterval(syncMouse, 25);
+  setInterval(syncMouse, 16);
   setInterval(poll, 2000);
 });
 app.on('before-quit', () => { quitting = true; });

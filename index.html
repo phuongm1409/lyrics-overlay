@@ -1,8 +1,9 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self';">
 <title>Lyrics Overlay</title>
+<link rel="stylesheet" href="assets/fonts/lexend-deca.css">
 <style>
   *, *::before, *::after { box-sizing: border-box }
   :root {
@@ -17,18 +18,18 @@
   body.unlocked #shell { outline: 1px dashed var(--accent); }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 8px;
     height: 50px; flex: 0 0 50px; padding: 0 8px 0 16px; }
-  body.unlocked .top { -webkit-app-region: drag; cursor: move }
   .identity { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
   .identity img { width: 22px; height: 22px; flex: none; }
-  #meta { font-size: 12px; font-weight: 600; color: #f0e8fc; white-space: nowrap; overflow: hidden;
+  #meta { font-family: 'Lexend Deca','Segoe UI',system-ui,sans-serif; font-size: 12px; font-weight: 600; color: #f0e8fc; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; text-shadow: var(--shadow); }
   #source { color: var(--muted); font-size: 11px; font-weight: 500; padding-inline-start: 5px; }
-  .controls { display: flex; flex: none; gap: 3px; -webkit-app-region: no-drag; }
-  button { display: grid; place-items: center; width: 35px; height: 34px; padding: 0; border: 1px solid transparent;
-    border-radius: 8px; background: rgba(26,19,41,.82); cursor: pointer; color: white; }
-  button:hover, button:focus-visible { outline: none; background: #312544; border-color: var(--accent); }
-  button img { width: 17px; height: 17px; filter: invert(1); pointer-events: none; }
-  button[aria-pressed="true"] { border-color: rgba(170,255,0,.48); background: #29263b; }
+  .controls { display: flex; flex: none; gap: 3px; }
+  .controls button { display: grid; place-items: center; width: 25px; height: 24px; padding: 0;
+    border: 0; background: transparent; cursor: pointer; }
+  .controls button:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
+  .controls button img { width: 12px; height: 12px; filter: invert(1); opacity: .82; pointer-events: none; }
+  .controls button:hover img, .controls button:focus-visible img, #lock[aria-pressed="true"] img { opacity: 1; }
+  body.unlocked #lock { cursor: move; touch-action: none; }
   #lyrics { flex: 1; display: grid; align-content: center; padding: 5px 24px 16px; gap: 7px; overflow-y: auto;
     scrollbar-width: thin; text-align: var(--align); }
   #active { font: var(--font-style) var(--weight) var(--size)/1.13 var(--font), 'Segoe UI', sans-serif;
