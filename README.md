@@ -13,7 +13,7 @@ Lyrics Overlay is a Windows desktop overlay for Spotify. The current line fills 
 
 | Icon | Action |
 |---|---|
-| Lock / unlock | The overlay passes clicks through outside the four icons in both modes. To reposition it, unlock and drag the lock icon. Shift-drag the same icon to resize. Click it again to lock the position. |
+| Lock / unlock | Unlock and drag anywhere from the top edge down to the lyrics. The overlay scales to 80% while you drag and returns to full size on release. The lyrics area stays click-through. Drag an outer edge or corner to resize. Click the lock icon to lock the position. |
 | Upload | Import timed lyrics for the current track. If Spotify has no active track, enter its artist and title in the editor before saving. |
 | Menu | Change background opacity, text and sweep colors, font, and sync offset. Toggle the previous or next lyric, track info, lyric source, playback progress, and status messages. |
 | Close | Choose **Hide to tray**, **Exit completely**, or **Cancel**. To restore, click the app icon in the Windows notification area or its **Hidden icons** section. Right-click it for the tray menu. |

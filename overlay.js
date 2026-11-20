@@ -39,7 +39,7 @@ function lockUI(locked) {
   positionLocked = locked;
   const label = locked ? 'Unlock position' : 'Lock position';
   button.querySelector('img').src = locked ? 'locked.svg' : 'unlocked.svg';
-  button.title = locked ? label : 'Click to lock, drag to move, or Shift-drag to resize';
+  button.title = locked ? label : 'Click to lock. Drag the header to move or an outer edge to resize.';
   button.setAttribute('aria-label', label);
   button.setAttribute('aria-pressed', String(locked));
   document.body.classList.toggle('unlocked', !locked);
@@ -156,42 +156,55 @@ function frame(now) {
 
 const buttons = ['lock', 'upload', 'menu', 'close'].map($);
 const lockButton = $('lock');
-let dragPointer = null;
+const surface = $('surface');
+const grips = [...$('resize-grips').children];
+let dragHeight = 0;
+let gesture = null;
 let suppressLockClick = false;
 
 function reportHitAreas() {
-  const rects = buttons.map(button => {
-    const { left, top, right, bottom } = button.getBoundingClientRect();
+  dragHeight = $('shell').offsetTop + document.querySelector('.top').offsetHeight;
+  surface.style.setProperty('--drag-height', dragHeight + 'px');
+  const rect = element => {
+    const { left, top, right, bottom } = element.getBoundingClientRect();
     return { left, top, right, bottom };
-  });
-  void api.invoke('overlay:hit-areas', rects);
+  };
+  const edges = grips.map(grip => ({ ...rect(grip), edge: grip.dataset.edge }));
+  void api.invoke('overlay:hit-areas', { rects: buttons.map(rect), dragHeight, edges });
 }
 new ResizeObserver(reportHitAreas).observe(document.documentElement);
+surface.addEventListener('transitionend', reportHitAreas);
 
-lockButton.addEventListener('pointerdown', event => {
+document.addEventListener('pointerdown', event => {
   suppressLockClick = false;
-  if (positionLocked || event.button !== 0 || !event.isPrimary) return;
-  lockButton.setPointerCapture(event.pointerId);
-  dragPointer = event.pointerId;
-  void api.invoke('overlay:drag-start', event.shiftKey);
+  if (positionLocked || gesture || event.button !== 0 || !event.isPrimary) return;
+  const control = event.target.closest('button');
+  const grip = event.target.closest('[data-edge]');
+  if (!grip && (event.clientY >= dragHeight || (control && control !== lockButton))) return;
+
+  const capture = control || grip || surface;
+  capture.setPointerCapture(event.pointerId);
+  gesture = { id: event.pointerId, atLock: control === lockButton };
+  surface.style.transformOrigin = event.clientX + 'px ' + event.clientY + 'px';
+  void api.invoke('overlay:drag-start', {
+    x: event.clientX, y: event.clientY, edge: grip?.dataset.edge ?? (control === lockButton && event.shiftKey ? 'se' : null)
+  });
 });
 
 function finishDrag(event) {
-  if (dragPointer !== event.pointerId) return;
-  dragPointer = null;
-  if (event.type === 'pointerup') {
-    // Catch the click that follows pointerup until the main process says whether this was a drag.
-    suppressLockClick = true;
-    void api.invoke('overlay:drag-end').then(moved => {
-      if (!moved) return api.invoke('overlay:lock');
-    });
-  } else {
-    void api.invoke('overlay:drag-end');
-  }
+  if (gesture?.id !== event.pointerId) return;
+  const { atLock } = gesture;
+  gesture = null;
+  const released = event.type === 'pointerup';
+  if (atLock && released) suppressLockClick = true;
+  void api.invoke('overlay:drag-end', !released).then(moved => {
+    if (atLock && released && !moved) return api.invoke('overlay:lock');
+  });
 }
 for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-  lockButton.addEventListener(event, finishDrag);
+  document.addEventListener(event, finishDrag);
 }
+api.on('dragging', dragging => document.body.classList.toggle('dragging', dragging));
 
 for (const button of buttons) {
   button.addEventListener('click', event => {

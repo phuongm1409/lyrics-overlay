@@ -16,7 +16,8 @@ let cfg = {}, tokens = {}, settingsWin, previewUntil = 0;
 let ignoreMouse = false, closePrompt = false, importing = false, quitting = false;
 let trackRevision = 0;
 const MIN_WIDTH = 310, MIN_HEIGHT = 164;
-let hitAreas = [], drag = null;
+const RESIZE_EDGES = new Set(['n', 'e', 's', 'w', 'nw', 'ne', 'sw', 'se']);
+let hitAreas = [], resizeAreas = [], dragHeight = 0, drag = null;
 const DEFAULTS = { fontSize: 36, fontWeight: 700, fontFamily: 'Segoe UI', fontStyle: 'normal', align: 'center',
   sweepColor: '#aaff00', textColor: '#aba2c3', dimOpacity: 85, shadowColor: '#120e1c', shadowBlur: 12, shadowOpacity: 90,
   bgColor: '#160e2b', bgOpacity: 86, radius: 17, syncOffset: 0,
@@ -41,10 +42,14 @@ function createOverlay() {
     if (!quitting) { event.preventDefault(); confirmClose(); }
   });
   win.on('show', syncMouse);
-  for (const event of ['blur', 'hide']) win.on(event, () => { drag = null; });
+  for (const event of ['blur', 'hide']) win.on(event, clearDrag);
   win.setIgnoreMouseEvents(true);
   ignoreMouse = true;
   win.loadFile('index.html');
+}
+
+function contains(rect, x, y) {
+  return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
 
 function syncMouse() {
@@ -53,9 +58,10 @@ function syncMouse() {
   if (drag) updateDrag(point);
   const bounds = win.getContentBounds();
   const x = point.x - bounds.x, y = point.y - bounds.y;
-  const inButton = hitAreas.some(({ left, top, right, bottom }) =>
-    x >= left && x < right && y >= top && y < bottom);
-  const shouldIgnore = !inButton && !drag;
+  const inButton = hitAreas.some(rect => contains(rect, x, y));
+  const inDragStrip = !locked && x >= 0 && x < bounds.width && y >= 0 && y < dragHeight;
+  const inResizeGrip = !locked && resizeAreas.some(rect => contains(rect, x, y));
+  const shouldIgnore = !inButton && !inDragStrip && !inResizeGrip && !drag;
   if (shouldIgnore === ignoreMouse) return;
   ignoreMouse = shouldIgnore;
   win.setIgnoreMouseEvents(shouldIgnore);
@@ -64,15 +70,36 @@ function syncMouse() {
 function updateDrag(point) {
   const dx = point.x - drag.start.x, dy = point.y - drag.start.y;
   if (!drag.moved && Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
-  drag.moved = true;
+  if (dx === drag.dx && dy === drag.dy) return;
+  drag.dx = dx;
+  drag.dy = dy;
+  if (!drag.moved) {
+    drag.moved = true;
+    if (!drag.edge) send('dragging', true);
+  }
   const { x, y, width, height } = drag.bounds;
-  if (drag.resize) win.setSize(Math.max(MIN_WIDTH, width + dx), Math.max(MIN_HEIGHT, height + dy));
-  else win.setPosition(x + dx, y + dy);
+  const edge = drag.edge;
+  if (!edge) { win.setPosition(x + dx, y + dy); return; }
+
+  const west = edge.includes('w'), north = edge.includes('n');
+  const nextWidth = Math.max(MIN_WIDTH, width + (west ? -dx : edge.includes('e') ? dx : 0));
+  const nextHeight = Math.max(MIN_HEIGHT, height + (north ? -dy : edge.includes('s') ? dy : 0));
+  win.setBounds({
+    x: west ? x + width - nextWidth : x,
+    y: north ? y + height - nextHeight : y,
+    width: nextWidth,
+    height: nextHeight
+  });
+}
+
+function clearDrag() {
+  if (drag?.moved && !drag.edge) send('dragging', false);
+  drag = null;
 }
 
 function setLocked(value) {
   locked = value;
-  drag = null;
+  clearDrag();
   syncMouse();
   send('locked', value);
   buildTray();
@@ -122,7 +149,7 @@ function openEditor() {
 }
 function openSettings() {
   if (settingsWin && !settingsWin.isDestroyed()) { settingsWin.show(); settingsWin.focus(); return; }
-  settingsWin = new BrowserWindow({ width: 440, height: 720, x: 20, y: 20, title: 'Lyrics Overlay – Appearance', icon: assets('icon.png'),
+  settingsWin = new BrowserWindow({ width: 560, height: 460, minWidth: 460, minHeight: 444, useContentSize: true, x: 20, y: 20, title: 'Lyrics Overlay – Appearance', icon: assets('icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js') } });
   settingsWin.setMenu(null);
   settingsWin.loadFile('settings.html');
@@ -368,21 +395,35 @@ async function importLyrics() {
   }
 }
 
-ipcMain.handle('overlay:hit-areas', ({ sender }, rects) => {
-  if (sender !== win?.webContents || !Array.isArray(rects) || rects.length !== 4) return;
-  if (!rects.every(rect => rect && ['left', 'top', 'right', 'bottom'].every(key => Number.isFinite(rect[key])))) return;
+ipcMain.handle('overlay:hit-areas', ({ sender }, areas) => {
+  if (sender !== win?.webContents) return;
+  const { rects, dragHeight: height, edges } = areas ?? {};
+  if (!Number.isFinite(height) || !Array.isArray(rects) || rects.length !== 4) return;
+  const valid = rect => rect && ['left', 'top', 'right', 'bottom'].every(key => Number.isFinite(rect[key]));
+  if (!rects.every(valid) || !Array.isArray(edges) || edges.length !== RESIZE_EDGES.size
+    || !edges.every(rect => valid(rect) && RESIZE_EDGES.has(rect.edge))) return;
   hitAreas = rects;
+  resizeAreas = edges;
+  dragHeight = height;
   syncMouse();
 });
-ipcMain.handle('overlay:drag-start', ({ sender }, resize) => {
+ipcMain.handle('overlay:drag-start', ({ sender }, position) => {
   if (sender !== win?.webContents || locked || drag || closePrompt || importing) return;
-  drag = { start: screen.getCursorScreenPoint(), bounds: win.getBounds(), resize: resize === true, moved: false };
+  const { x, y, edge } = position ?? {};
+  const content = win.getContentBounds();
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x >= content.width || y < 0 || y >= content.height) return;
+  const grip = resizeAreas.find(rect => contains(rect, x, y));
+  if (grip ? edge !== grip.edge : y >= dragHeight || (edge && edge !== 'se')) return;
+  drag = {
+    start: { x: content.x + Math.round(x), y: content.y + Math.round(y) },
+    bounds: win.getBounds(), edge: edge || null, moved: false
+  };
 });
-ipcMain.handle('overlay:drag-end', ({ sender }) => {
+ipcMain.handle('overlay:drag-end', ({ sender }, cancelled) => {
   if (sender !== win?.webContents || !drag) return true;
-  updateDrag(screen.getCursorScreenPoint());
+  if (!cancelled) updateDrag(screen.getCursorScreenPoint());
   const { moved } = drag;
-  drag = null;
+  clearDrag();
   syncMouse();
   return moved;
 });

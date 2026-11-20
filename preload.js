@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const events = new Set(['locked', 'track', 'progress', 'status', 'settings', 'notice', 'editor:import', 'google:state']);
+const events = new Set(['locked', 'dragging', 'track', 'progress', 'status', 'settings', 'notice', 'editor:import', 'google:state']);
 const actions = new Set([
   'overlay:lock', 'overlay:hit-areas', 'overlay:drag-start', 'overlay:drag-end', 'overlay:close', 'overlay:upload', 'overlay:menu',
   'editor:open', 'editor:init', 'editor:save', 'editor:clientId', 'editor:connect',

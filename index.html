@@ -13,11 +13,31 @@
   }
   html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; color: #f6f1ff;
     font-family: 'Segoe UI',system-ui,sans-serif; }
+  #surface { position: absolute; inset: 0; transform: scale(1); transition: transform 160ms cubic-bezier(.2,.75,.3,1); }
+  body.dragging #surface { transform: scale(.8); }
+  #drag-strip { position: absolute; inset: 0 0 auto; height: var(--drag-height, 59px); }
+  body.unlocked #drag-strip { background: rgba(0,0,0,.01); }
+  body.unlocked #drag-strip, body.unlocked .top { cursor: grab; touch-action: none; }
+  body.dragging, body.dragging #drag-strip, body.dragging .top, body.dragging #lock { cursor: grabbing; }
+  #resize-grips { position: absolute; inset: 0; pointer-events: none; }
+  #resize-grips > div { position: absolute; touch-action: none; }
+  body.unlocked #resize-grips > div { pointer-events: auto; background: rgba(0,0,0,.01); }
+  [data-edge="n"] { inset: 0 14px auto; height: 5px; cursor: ns-resize; }
+  [data-edge="s"] { inset: auto 14px 0; height: 12px; cursor: ns-resize; }
+  [data-edge="w"], [data-edge="e"] { top: 14px; bottom: 14px; width: 12px; cursor: ew-resize; }
+  [data-edge="w"] { left: 0; }
+  [data-edge="e"] { right: 0; }
+  [data-edge$="w"]:not([data-edge="w"]), [data-edge$="e"]:not([data-edge="e"]) { width: 14px; height: 14px; }
+  [data-edge="nw"] { top: 0; left: 0; cursor: nwse-resize; }
+  [data-edge="ne"] { top: 0; right: 0; cursor: nesw-resize; }
+  [data-edge="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
+  [data-edge="se"] { bottom: 0; right: 0; cursor: nwse-resize; }
+  @media (prefers-reduced-motion: reduce) { #surface { transition: none; } }
   #shell { position: absolute; inset: 5px; display: flex; flex-direction: column; overflow: hidden;
     border-radius: var(--radius); background: var(--panel); outline: 1px solid var(--outline); outline-offset: -1px; }
   body.unlocked #shell { outline: 1px dashed var(--accent); }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    height: 50px; flex: 0 0 50px; padding: 0 8px 0 16px; }
+    height: 54px; flex: 0 0 54px; padding: 0 8px 0 16px; user-select: none; }
   .identity { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
   .identity img { width: 22px; height: 22px; flex: none; }
   #meta { font-family: 'Lexend Deca','Segoe UI',system-ui,sans-serif; font-size: 12px; font-weight: 600; color: #f0e8fc; white-space: nowrap; overflow: hidden;
@@ -29,7 +49,7 @@
   .controls button:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
   .controls button img { width: 12px; height: 12px; filter: invert(1); opacity: .82; pointer-events: none; }
   .controls button:hover img, .controls button:focus-visible img, #lock[aria-pressed="true"] img { opacity: 1; }
-  body.unlocked #lock { cursor: move; touch-action: none; }
+  body.unlocked #lock { cursor: grab; touch-action: none; }
   #lyrics { flex: 1; display: grid; align-content: center; padding: 5px 24px 16px; gap: 7px; overflow-y: auto;
     scrollbar-width: thin; text-align: var(--align); }
   #active { font: var(--font-style) var(--weight) var(--size)/1.13 var(--font), 'Segoe UI', sans-serif;
@@ -50,10 +70,12 @@
     background: #221c2e; font-size: 12px; pointer-events: none; }
   [hidden] { display: none !important }
 </style>
+<div id="surface">
+<div id="drag-strip" aria-hidden="true"></div>
 <div id="shell">
   <header class="top">
     <div class="identity">
-      <img src="icon.svg" alt="">
+      <img src="icon.svg" alt="" draggable="false">
       <div id="meta"><span id="track-label"></span><span id="source"></span></div>
     </div>
     <nav class="controls" aria-label="Overlay controls">
@@ -73,5 +95,10 @@
   <div id="progress" aria-hidden="true" hidden><span></span></div>
 </div>
 <div id="notice" role="status" hidden></div>
+</div>
+<div id="resize-grips" aria-hidden="true">
+  <div data-edge="n"></div><div data-edge="e"></div><div data-edge="s"></div><div data-edge="w"></div>
+  <div data-edge="nw"></div><div data-edge="ne"></div><div data-edge="sw"></div><div data-edge="se"></div>
+</div>
 <script src="overlay.js"></script>
 </html>

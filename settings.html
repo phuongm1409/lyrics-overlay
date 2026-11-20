@@ -2,41 +2,67 @@
 <meta charset="utf-8">
 <title>Lyrics Overlay Settings</title>
 <style>
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:#181122;color:#eee;margin:0;padding:16px 20px}
-  h4{margin:18px 0 6px;color:#aaff00;font-size:13px;text-transform:uppercase;letter-spacing:.08em}
-  .r{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:14px} .r label{width:150px;flex:none}
-  .r input[type=range]{flex:1} .r select{flex:1;background:#22222b;color:#eee;border:1px solid #444;border-radius:6px;padding:5px}
-  .r input[type=color]{width:60px;height:28px;border:0;background:none;padding:0} .v{width:48px;text-align:right;opacity:.7;font-size:12px}
-  button{background:#aaff00;color:#000;border:0;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer;margin:16px 8px 0 0} button.g{background:#333;color:#eee}
-  input[type=range],input[type=checkbox]{accent-color:#aaff00}
-  input[type=checkbox]{width:17px;height:17px}
-  button:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid #aaff00;outline-offset:2px}
-  .actions{display:flex;flex-wrap:wrap;gap:0 3px}
-  small{display:block;opacity:.6;margin-top:10px}
-  #drive { border-bottom:1px solid #3e3150; padding-bottom:16px; }
-  #drive h4 { margin-top:0; }
-  #drive p { margin:6px 0; font-size:13px; line-height:1.4; }
-  #drive-status { color:#eadff5; overflow-wrap:anywhere; }
-  #drive button { margin-top:8px; }
-  #drive button:disabled { opacity:.55; cursor:default; }
-  [hidden] { display:none !important; }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body { font: 13px 'Segoe UI', system-ui, sans-serif; background: #181122; color: #f5eefc;
+    margin: 0; padding: 16px; display: flex; flex-direction: column; min-height: 100vh; }
+  .tabs { display: flex; gap: 4px; padding: 4px; border: 1px solid #3a2d48;
+    background: #20162c; border-radius: 10px; }
+  button { font: inherit; font-weight: 600; color: #f5eefc; background: #332640;
+    border: 0; border-radius: 7px; padding: 8px 11px; cursor: pointer; }
+  button.primary { background: #aaff00; color: #202817; }
+  button:disabled { opacity: .55; cursor: default; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #aaff00; outline-offset: 2px; }
+  [role=tab] { flex: 1; white-space: nowrap; background: transparent; color: #cabcd8; }
+  [role=tab][aria-selected=true] { color: #aaff00; background: #352643; }
+  #panels { flex: 1; margin: 13px 0; }
+  [role=tabpanel] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; align-content: start; }
+  .group { border: 1px solid #3a2d48; background: #21172c; padding: 10px 12px; border-radius: 9px; min-width: 0; }
+  #panel-text .group, #panel-playback .group, #panel-drive .group, #panel-appearance .group:last-child { grid-column: 1 / -1; }
+  h2 { font-size: 13px; margin: 0 0 6px; color: #c9fa81; }
+  .row { display: flex; min-height: 29px; align-items: center; justify-content: space-between; gap: 7px; }
+  .row input[type=range] { flex: 1; min-width: 44px; margin: 0; max-width: 160px; }
+  .row select { background: #2d203a; color: #f5eefc; border: 1px solid #4b3a59; padding: 3px 6px; border-radius: 6px; min-width: 44%; }
+  input { accent-color: #aaff00; }
+  input[type=color] { width: 37px; height: 23px; border: 0; background: transparent; padding: 0; }
+  input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
+  .value { color: #cabcd8; min-width: 31px; text-align: right; font-variant-numeric: tabular-nums; font-size: 11px; }
+  footer { border-top: 1px solid #3a2d48; padding-top: 11px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  #drive-status, #drive-help { overflow-wrap: anywhere; margin: 7px 0 11px; line-height: 1.45; }
+  #drive-help { color: #cabcd8; }
+  [hidden] { display: none !important; }
 </style>
-<section id="drive" aria-labelledby="drive-title">
-  <h4 id="drive-title">Google Drive</h4>
-  <p id="drive-status" role="status">Checking Google Drive…</p>
-  <p id="drive-help">Sign in to sync this device’s lyrics and original subtitle files with the Google account you choose.</p>
-  <button id="google-sign-in">Sign in with Google</button>
-  <button id="google-configure" class="g">Load OAuth file</button>
-  <button id="google-sync" hidden>Sync now</button>
-  <button id="google-folder" class="g" hidden>Open Drive folder</button>
-  <button id="google-disconnect" class="g" hidden>Disconnect</button>
-</section>
-<div id="f"></div>
-<div class="actions">
-<button id="pv">Preview sample lyrics (50s)</button><button id="rs" class="g">Reset to defaults</button>
-<button id="ed" class="g">Lyrics editor / Spotify setup</button>
+<div class="tabs" role="tablist" aria-label="Settings">
+  <button id="tab-text" role="tab" aria-selected="true" aria-controls="panel-text">Text</button>
+  <button id="tab-appearance" role="tab" aria-selected="false" aria-controls="panel-appearance" tabindex="-1">Appearance</button>
+  <button id="tab-playback" role="tab" aria-selected="false" aria-controls="panel-playback" tabindex="-1">Playback</button>
+  <button id="tab-drive" role="tab" aria-selected="false" aria-controls="panel-drive" tabindex="-1">Google Drive</button>
 </div>
-<small>Changes apply to the overlay instantly and are saved automatically.</small>
+<div id="panels">
+  <section id="panel-text" role="tabpanel" aria-labelledby="tab-text"></section>
+  <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden></section>
+  <section id="panel-playback" role="tabpanel" aria-labelledby="tab-playback" hidden></section>
+  <section id="panel-drive" role="tabpanel" aria-labelledby="tab-drive" hidden>
+    <div class="group">
+      <h2>Google Drive</h2>
+      <p id="drive-status" role="status">Checking Google Drive…</p>
+      <p id="drive-help">Sign in to sync your lyrics and original subtitle files.</p>
+      <div class="actions">
+        <button id="google-sign-in" class="primary">Sign in with Google</button>
+        <button id="google-configure">Load OAuth file</button>
+        <button id="google-sync" class="primary" hidden>Sync now</button>
+        <button id="google-folder" hidden>Open Drive folder</button>
+        <button id="google-disconnect" hidden>Disconnect</button>
+      </div>
+    </div>
+  </section>
+</div>
+<footer class="actions">
+  <button id="pv" class="primary">Preview lyrics</button>
+  <button id="rs">Reset to defaults</button>
+  <button id="ed">Lyrics editor / Spotify setup</button>
+</footer>
 <script>
 const FONTS = ['Segoe UI','Lexend Deca','Arial','Verdana','Trebuchet MS','Georgia','Times New Roman','Consolas','Impact','Comic Sans MS'].map(x => [x, x]);
 const F = [
@@ -68,28 +94,77 @@ const F = [
   ['Timing'],
   ['syncOffset', 'Sync offset', 'range', -5000, 5000, 250, ' ms']
 ];
+const groupPanels = {
+  Text: 'text', Colors: 'appearance', Shadow: 'appearance',
+  Background: 'appearance', Visibility: 'playback', Timing: 'playback'
+};
 function render(vals) {
-  const root = document.getElementById('f'); root.innerHTML = '';
+  for (const id of ['text', 'appearance', 'playback']) byId('panel-' + id).replaceChildren();
+  let group;
   for (const [k, label, type, a, b, step, unit] of F) {
-    if (!label) { const h = document.createElement('h4'); h.textContent = k; root.appendChild(h); continue; }
-    const row = document.createElement('div'); row.className = 'r';
-    const l = document.createElement('label'); l.textContent = label; l.htmlFor = k; row.appendChild(l);
-    let inp;
+    if (!label) {
+      group = document.createElement('div');
+      group.className = 'group';
+      const heading = document.createElement('h2');
+      heading.textContent = k === 'Text' ? 'Typography' : k;
+      group.appendChild(heading);
+      byId('panel-' + groupPanels[k]).appendChild(group);
+      continue;
+    }
+    const row = document.createElement('div');
+    row.className = 'row';
+    const title = document.createElement('label');
+    title.textContent = label;
+    title.htmlFor = k;
+    row.appendChild(title);
+    const input = document.createElement(type === 'select' ? 'select' : 'input');
     if (type === 'select') {
-      inp = document.createElement('select');
-      for (const [v, t] of a) { const o = document.createElement('option'); o.value = v; o.textContent = t; inp.appendChild(o); }
-    } else { inp = document.createElement('input'); inp.type = type; if (type === 'range') { inp.min = a; inp.max = b; inp.step = step; } }
-    inp.id = k;
-    if (type === 'checkbox') inp.checked = vals[k]; else inp.value = vals[k];
-    row.appendChild(inp);
-    let out; if (type === 'range') { out = document.createElement('span'); out.className = 'v'; out.textContent = vals[k] + unit; row.appendChild(out); }
-    inp.addEventListener('input', () => {
-      if (out) out.textContent = inp.value + unit;
-      api.invoke('settings:set', { [k]: type === 'checkbox' ? inp.checked : type === 'range' ? Number(inp.value) : inp.value });
+      for (const [value, name] of a) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = name;
+        input.appendChild(option);
+      }
+    } else {
+      input.type = type;
+      if (type === 'range') { input.min = a; input.max = b; input.step = step; }
+    }
+    input.id = k;
+    if (type === 'checkbox') input.checked = vals[k]; else input.value = vals[k];
+    row.appendChild(input);
+    const output = type === 'range' ? document.createElement('span') : null;
+    if (output) {
+      output.className = 'value';
+      output.textContent = vals[k] + unit;
+      row.appendChild(output);
+    }
+    input.addEventListener('input', () => {
+      if (output) output.textContent = input.value + unit;
+      api.invoke('settings:set', { [k]: type === 'checkbox' ? input.checked : output ? Number(input.value) : input.value });
     });
-    root.appendChild(row);
+    group.appendChild(row);
   }
 }
+const tabs = [...document.querySelectorAll('[role=tab]')];
+function selectTab(active) {
+  for (const tab of tabs) {
+    const selected = tab === active;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    byId(tab.getAttribute('aria-controls')).hidden = !selected;
+  }
+}
+tabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => selectTab(tab));
+  tab.addEventListener('keydown', event => {
+    const next = { ArrowLeft: (index + tabs.length - 1) % tabs.length, ArrowRight: (index + 1) % tabs.length,
+      Home: 0, End: tabs.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    selectTab(tabs[next]);
+    tabs[next].focus();
+  });
+});
 const driveButtons = {
   'google-sign-in': 'google:sign-in', 'google-configure': 'google:configure',
   'google-sync': 'google:sync', 'google-folder': 'google:open-folder', 'google-disconnect': 'google:disconnect'
